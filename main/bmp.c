@@ -1,13 +1,13 @@
-#include "sensor.h"
+#include "bmp.h"
 
 #define SDA_PIN GPIO_NUM_21
 #define SCL_PIN GPIO_NUM_22
 
-static const char *TAG = "weather_station_sensor";
-const TickType_t xQueueBlockTime = pdMS_TO_TICKS(200);
+static const char *TAG = "gz_bmp";
+
 
 /**
- * @brief collect data from BME280 sensor
+ * @brief collect data from BMP280 sensor
  * 
  * @param pvParamters a pointer to QueueHandle_t to which this function will send the data collected from the sensor
  */
@@ -30,7 +30,7 @@ void bmp280_collect_data(void *pvParamters)
 
     // check if we have detected BME280 or BMP280 modification of the sensor
     bool bme280p = dev.id == BME280_CHIP_ID;
-    printf("BMP280: found %s\n", bme280p ? "BME280" : "BMP280");
+    ESP_LOGI(TAG, "Found: %s\n", bme280p ? "BME280" : "BMP280");
 
     // the fun part starts here
     // read data from the sensor, create a WeatherMessage struct and send it to the queue
@@ -45,13 +45,13 @@ void bmp280_collect_data(void *pvParamters)
     else
     {
         // WeatherMessage is defined in weather_station.h
-        struct WeatherMessage msg;
+        struct BmpMessage msg;
         msg.temperature = temperature;
         msg.humidity = humidity;
         msg.pressure = pressure;
-        ESP_LOGI(TAG, "Sending WeatherMessage to queue: %f %f %f\n", msg.temperature, msg.pressure, msg.humidity);
+        ESP_LOGI(TAG, "Sending data to queue: temp: %f, pressure: %f, humidity: %f\n", msg.temperature, msg.pressure, msg.humidity);
 
-        xQueueSendToFront(queue, (void *)&msg, xQueueBlockTime);
+        xQueueSendToFront(queue, (void *)&msg, pdMS_TO_TICKS(200));
     }
 
     // this should be called if you want FreeRTOS to execute the task once and finish afterwards

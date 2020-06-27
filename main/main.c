@@ -2,13 +2,15 @@
 
 #include "nvs_flash.h"
 
-#include "sensor.h"
+#include "bmp.h"
+#include "ultrason.h"
 #include "wifi.h"
 #include "mqtt.h"
+
 #include "esp_log.h"
 #include <string.h>
 
-static const char *TAG = "weather_station";
+static const char *TAG = "gz_main";
 
 /**
  * @brief encode a WeatherMessage in JSON format
@@ -16,30 +18,15 @@ static const char *TAG = "weather_station";
  * @param msg the output result will be written here
  * @param msg_struct WeatherMessage to be encoded
  */
-void create_weather_msg(char *msg, struct WeatherMessage *msg_struct)
+void create_weather_msg(char *msg, struct BmpMessage *bmp, struct UltrasonicMessage *ultrasonic)
 {
+	float distance = convert_echo_m(&ultrasonic->echo_us, &bmp->temperature);
 	sprintf(msg,
-			"{\"temp\":%.2f,\"pressure\":%.2f,\"altitude\":%.2f,\"humidity\":%.2f}",
-			msg_struct->temperature, msg_struct->pressure, 0.0, msg_struct->humidity);
+			"{\"temp\":%.2f,\"pressure\":%.2f,\"humidity\":%.2f,\"distance\":%.3f}",
+			bmp->temperature, bmp->pressure, bmp->humidity, distance);
 }
 
-/**
- * @brief Main function of the allication. Orchestrates all tasks.
- * 1. Collects data from the BME280 sensor
- * 2. Starts the WiFi module and connects to the access point
- * 3. Sends collected data to the MQTT server
- * 4. Enters deep sleep and wakes after predetermined interval
- */
-void app_main()
-{
-	// let's create an EventGroup which will be used to block until WiFi has connected
-	EventGroupHandle_t s_connect_event_group = xEventGroupCreate();
-
-	// a queue for WeatherMessages from the sensor
-	QueueHandle_t queue = xQueueCreate(2, sizeof(struct WeatherMessage));
-
-	ESP_LOGI(TAG, "QueueHandle: %p", &queue);
-
+void log_init() {
 	esp_log_level_set("*", ESP_LOG_INFO);
 	esp_log_level_set("esp-tls", ESP_LOG_VERBOSE);
 	esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
@@ -48,26 +35,77 @@ void app_main()
 	esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
 	esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
 	esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
+}
 
-	// initialize I2C
-	ESP_ERROR_CHECK(i2cdev_init());
-	// this FreeRTOS function runs the bmp280_collect_data function in parallel
-	// we don't need to block on it since we are using a queue to send WeatherMessages
-	// so all functions will wait for new messages on the queue
-	xTaskCreatePinnedToCore(bmp280_collect_data, "bmp280_collect_data", configMINIMAL_STACK_SIZE * 8, (void *)queue, 5, NULL, APP_CPU_NUM);
-
-	// Initialize the NonVolatileStorage
+void nvs_init() {
+	ESP_LOGI(TAG, "Init NonVolatileStorage");
 	esp_err_t ret = nvs_flash_init();
-	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-	{
+	if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
 		ESP_ERROR_CHECK(nvs_flash_erase());
 		ret = nvs_flash_init();
 	}
 	ESP_ERROR_CHECK(ret);
+}
 
-	// connect to the WiFi
-	wifi_connect_blocking(&s_connect_event_group);
+void i2c_init() {
+	ESP_LOGI(TAG, "Init i2c");
+	ESP_ERROR_CHECK(i2cdev_init());
+}
 
-	// send all incoming WeatherMessages to the MQTT topic
-	mqtt_app_start(queue);
+QueueHandle_t bmp_collect_async() {
+	QueueHandle_t queue = xQueueCreate(2, sizeof(struct BmpMessage));
+	xTaskCreatePinnedToCore(bmp280_collect_data, "bmp280_collect_data",
+			configMINIMAL_STACK_SIZE * 8, (void*) queue, 5, NULL, APP_CPU_NUM);
+	return queue;
+}
+
+QueueHandle_t ultrasonic_collect_async() {
+	QueueHandle_t queue = xQueueCreate(2, sizeof(struct UltrasonicMessage));
+	xTaskCreatePinnedToCore(ultrasonic_collect_data, "ultrasonic_collect_data",
+			configMINIMAL_STACK_SIZE * 8, (void*) queue, 5, NULL, PRO_CPU_NUM);
+	return queue;
+}
+
+void wifi_init() {
+	ESP_LOGI(TAG, "Init Wifi ...");
+	EventGroupHandle_t event_group = xEventGroupCreate();
+	wifi_connect_blocking(&event_group);
+	ESP_LOGI(TAG, "Init Wifi done");
+}
+
+void app_main()
+{
+	ESP_LOGI(TAG, "Start main");
+
+	log_init();
+
+	i2c_init();
+
+	nvs_init();
+
+	QueueHandle_t bmp_queue = bmp_collect_async();
+
+	QueueHandle_t ultrasonic_queue = ultrasonic_collect_async();
+
+	// blocking
+	wifi_init();
+
+	QueueHandle_t queue = xQueueCreate(2, sizeof(struct JsonMessage));
+	mqtt_publish_async(queue);
+
+	struct BmpMessage bmp_msg;
+	if (xQueueReceive(bmp_queue, &(bmp_msg), pdMS_TO_TICKS(1000))) {
+		ESP_LOGI(TAG, "Got data from BMP");
+	} else {
+		ESP_LOGE(TAG, "Unable to get BMP sensor data");
+	}
+	struct UltrasonicMessage ultrasonic_msg;
+	if (xQueueReceive(ultrasonic_queue, &(ultrasonic_msg), pdMS_TO_TICKS(1000))) {
+		ESP_LOGI(TAG, "Got data from Ultrasonic sensor");
+	} else {
+		ESP_LOGE(TAG, "Unable to get Ultrasonic data");
+	}
+	struct JsonMessage json_msg;
+	create_weather_msg(json_msg.json, &bmp_msg, &ultrasonic_msg);
+	xQueueSendToFront(queue, (void *)&json_msg, pdMS_TO_TICKS(200));
 }

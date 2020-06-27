@@ -1,10 +1,18 @@
 #pragma once
 
-struct WeatherMessage
+struct BmpMessage
 {
     float temperature;
     float pressure;
     float humidity;
 };
 
-void create_weather_msg(char *msg, struct WeatherMessage *msg_struct);
+struct UltrasonicMessage
+{
+	int echo_us;
+};
+
+struct JsonMessage
+{
+    char json[120];
+};

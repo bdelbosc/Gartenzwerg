@@ -1,0 +1,48 @@
+# # docker-compose.yml
+version: '3'
+
+services: 
+  influxdb:
+    container_name: influxdb
+    image: influxdb
+    ports:
+        - "8086:8086"
+    environment:
+      - INFLUXDB_DB=sensors
+      - INFLUXDB_ADMIN_USER=admin
+      - INFLUXDB_ADMIN_PASSWORD=telegraf
+    volumes:
+      - ./influxdb/data:/var/lib/influxdb
+    restart: always
+
+  telegraf: 
+    container_name: telegraf
+    image: arm32v7/telegraf:1.14.4
+    restart: always
+    depends_on: 
+      - mosquitto
+      - influxdb
+    volumes:
+    - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro   
+
+  grafana: 
+    container_name: grafana
+    image: grafana/grafana:7.0.3
+    user: root
+    links:
+      - influxdb
+    hostname: grafana
+    ports:
+        - "3000:3000"
+    volumes:
+      - ./grafana/data:/var/lib/grafana:rw
+
+  mosquitto:
+    container_name: mosquitto
+    image: arm32v6/eclipse-mosquitto:1.6.10
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    restart: always
+    volumes:
+      - ./mosquitto.conf:/mqtt/config:ro

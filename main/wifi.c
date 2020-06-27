@@ -36,7 +36,7 @@
 
 #define WIFI_CONNECTED_BITS BIT(1)
 
-static const char *TAG = "weather_station_wifi";
+static const char *TAG = "gz_wifi";
 
 /**
  * @brief Initialize Wi-Fi as sta and set scan method 
