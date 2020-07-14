@@ -11,6 +11,4 @@
 
 #include "mqtt_client.h"
 
-
-
 void mqtt_publish_async(QueueHandle_t queue);

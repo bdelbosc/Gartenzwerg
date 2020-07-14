@@ -5,13 +5,12 @@ static const char *TAG = "gz_ultrason";
 #define ECHO_PIN GPIO_NUM_32
 #define MAX_DISTANCE_MM 5000 // 5m max
 
-
 void send_msg(QueueHandle_t queue, int echo) {
-	// publish data
-	ESP_LOGI(TAG, "Sending data to queue: echo: %d us\n", echo);
-	struct UltrasonicMessage msg;
-	msg.echo_us = echo;
-	xQueueSendToFront(queue, (void* )&msg, pdMS_TO_TICKS(200));
+    // publish data
+    ESP_LOGI(TAG, "Sending data to queue: echo: %d us\n", echo);
+    struct UltrasonicMessage msg;
+    msg.echo_us = echo;
+    xQueueSendToFront(queue, (void* )&msg, pdMS_TO_TICKS(200));
 }
 
 /**
@@ -19,16 +18,13 @@ void send_msg(QueueHandle_t queue, int echo) {
  * 
  * @param pvParamters a pointer to QueueHandle_t to which this function will send the data collected from the sensor
  */
-void ultrasonic_collect_data(void *pvParamters)
-{
-	ESP_LOGI(TAG, "Start ultrasonic collect");
+void ultrasonic_collect_data(void *pvParamters) {
+    ESP_LOGI(TAG, "Start ultrasonic collect");
 
-	// init sensor
-	ultrasonic_sensor_t dev = {
-			.trigger_pin = TRIGGER_PIN,
-			.echo_pin = ECHO_PIN
-	};
-	esp_err_t ret = ultrasonic_init(&dev);
+    // init sensor
+    ultrasonic_sensor_t dev =
+            { .trigger_pin = TRIGGER_PIN, .echo_pin = ECHO_PIN };
+    esp_err_t ret = ultrasonic_init(&dev);
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Error on init got: %d, %s", ret, esp_err_to_name(ret));
     }
@@ -37,13 +33,14 @@ void ultrasonic_collect_data(void *pvParamters)
     int echo;
     ret = ultrasonic_measure_echo(&dev, &echo);
     if (ret != ESP_OK) {
-    	ESP_LOGE(TAG, "Error on measure got: %d, %s", ret, esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Error on measure got: %d, %s", ret,
+                esp_err_to_name(ret));
     }
 
     // send message
-	send_msg((QueueHandle_t) pvParamters, echo);
+    send_msg((QueueHandle_t) pvParamters, echo);
 
     // terminate
-	vTaskDelete(NULL);
-	ESP_LOGI(TAG, "End ultrasonic collect");
+    vTaskDelete(NULL);
+    ESP_LOGI(TAG, "End ultrasonic collect");
 }

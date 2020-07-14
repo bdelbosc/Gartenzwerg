@@ -5,14 +5,12 @@
 
 static const char *TAG = "gz_bmp";
 
-
 /**
  * @brief collect data from BMP280 sensor
  * 
  * @param pvParamters a pointer to QueueHandle_t to which this function will send the data collected from the sensor
  */
-void bmp280_collect_data(void *pvParamters)
-{
+void bmp280_collect_data(void *pvParamters) {
     // cast parameter pointer to QueueHandle_t
     QueueHandle_t queue = (QueueHandle_t) pvParamters;
 
@@ -25,7 +23,8 @@ void bmp280_collect_data(void *pvParamters)
     // we use pins 21 and 22 for data transfer between sensor and ESP32
     // note that BMP280_I2C_ADDRESS_0 holds a constant preset address 0x76
     // which is used by all BMP280 sensors
-    ESP_ERROR_CHECK(bmp280_init_desc(&dev, BMP280_I2C_ADDRESS_0, 0, SDA_PIN, SCL_PIN));
+    ESP_ERROR_CHECK(
+            bmp280_init_desc(&dev, BMP280_I2C_ADDRESS_0, 0, SDA_PIN, SCL_PIN));
     ESP_ERROR_CHECK(bmp280_init(&dev, &params));
 
     // check if we have detected BME280 or BMP280 modification of the sensor
@@ -38,20 +37,19 @@ void bmp280_collect_data(void *pvParamters)
 
     // we will wait for 500ms before reading any data
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    if (bmp280_read_float(&dev, &temperature, &pressure, &humidity) != ESP_OK)
-    {
+    if (bmp280_read_float(&dev, &temperature, &pressure, &humidity) != ESP_OK) {
         ESP_LOGI(TAG, "Temperature/pressure reading failed\n");
-    }
-    else
-    {
+    } else {
         // WeatherMessage is defined in weather_station.h
         struct BmpMessage msg;
         msg.temperature = temperature;
         msg.humidity = humidity;
         msg.pressure = pressure;
-        ESP_LOGI(TAG, "Sending data to queue: temp: %f, pressure: %f, humidity: %f\n", msg.temperature, msg.pressure, msg.humidity);
+        ESP_LOGI(TAG,
+                "Sending data to queue: temp: %f, pressure: %f, humidity: %f\n",
+                msg.temperature, msg.pressure, msg.humidity);
 
-        xQueueSendToFront(queue, (void *)&msg, pdMS_TO_TICKS(200));
+        xQueueSendToFront(queue, (void* )&msg, pdMS_TO_TICKS(200));
     }
 
     // this should be called if you want FreeRTOS to execute the task once and finish afterwards

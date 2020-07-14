@@ -1,18 +1,15 @@
 #pragma once
 
-struct BmpMessage
-{
+struct BmpMessage {
     float temperature;
     float pressure;
     float humidity;
 };
 
-struct UltrasonicMessage
-{
-	int echo_us;
+struct UltrasonicMessage {
+    int echo_us;
 };
 
-struct JsonMessage
-{
+struct JsonMessage {
     char json[120];
 };

@@ -1,5 +1,5 @@
 /**
- * @file ultrasonic.c
+ * @file ultrasonicmm.c
  *
  * ESP-IDF driver for ultrasonic range meters, e.g. HC-SR04, HY-SRF05 and the like
  *
@@ -8,6 +8,9 @@
  * Copyright (C) 2016, 2018 Ruslan V. Uss <unclerus@gmail.com>
  *
  * BSD Licensed as described in the file LICENSE
+ *
+ * Adapted to take multiple measure and take temperature into account.
+ *
  */
 #include <esp_idf_lib_helpers.h>
 #include <freertos/FreeRTOS.h>
@@ -40,19 +43,19 @@ static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 
 int echos[NB_MEASURES];
 
-int compare( const void* a, const void* b)
-{
-	int int_a = * ( (int*) a );
-	int int_b = * ( (int*) b );
+int compare(const void *a, const void *b) {
+    int int_a = *((int*) a);
+    int int_b = *((int*) b);
 
-	if ( int_a == int_b ) return 0;
-	else if ( int_a < int_b ) return -1;
-	else return 1;
+    if (int_a == int_b)
+        return 0;
+    else if (int_a < int_b)
+        return -1;
+    else
+        return 1;
 }
 
-
-esp_err_t ultrasonic_init(const ultrasonic_sensor_t *dev)
-{
+esp_err_t ultrasonic_init(const ultrasonic_sensor_t *dev) {
     CHECK_ARG(dev);
     CHECK(gpio_set_direction(dev->trigger_pin, GPIO_MODE_OUTPUT));
     CHECK(gpio_set_direction(dev->echo_pin, GPIO_MODE_INPUT));
@@ -69,7 +72,7 @@ esp_err_t measure_echo(const ultrasonic_sensor_t *dev, int *echo) {
     CHECK(gpio_set_level(dev->trigger_pin, 0));
 
     if (gpio_get_level(dev->echo_pin)) {
-    	RETURN_CRITICAL(ESP_ERR_ULTRASONIC_PING);
+        RETURN_CRITICAL(ESP_ERR_ULTRASONIC_PING);
     }
 
     // Wait for echo
@@ -83,8 +86,7 @@ esp_err_t measure_echo(const ultrasonic_sensor_t *dev, int *echo) {
     int64_t echo_start = esp_timer_get_time();
     int64_t time = echo_start;
     int64_t max_time = echo_start + ECHO_TIMEOUT_US;
-    while (gpio_get_level(dev->echo_pin))
-    {
+    while (gpio_get_level(dev->echo_pin)) {
         if (esp_timer_get_time() > max_time) {
             *echo = (uint32_t) (time - echo_start);
             RETURN_CRITICAL(ESP_ERR_ULTRASONIC_ECHO_TIMEOUT);
@@ -93,50 +95,53 @@ esp_err_t measure_echo(const ultrasonic_sensor_t *dev, int *echo) {
     time = esp_timer_get_time();
     PORT_EXIT_CRITICAL;
     *echo = (uint32_t) (time - echo_start);
-    ESP_LOGW(TAG, "start: %lu, end: %lu, echo: %u us",  (unsigned long) echo_start, (unsigned long) time, (unsigned) *echo);
+    ESP_LOGW(TAG, "start: %lu, end: %lu, echo: %u us",
+            (unsigned long ) echo_start, (unsigned long ) time,
+            (unsigned ) *echo);
     return ESP_OK;
 }
 
 float convert_echo_m(const int *echo, const float *temperature) {
-	float c = 2000000 / (331.5 + 0.607 * (*temperature));
-	return (*echo) / c;
+    float c = 2000000 / (331.5 + 0.607 * (*temperature));
+    return (*echo) / c;
 }
 
 esp_err_t ultrasonic_measure_echo(const ultrasonic_sensor_t *dev, int *echo) {
     CHECK_ARG(dev && echo);
     int count = 0;
-    for (int i=0; i < NB_MEASURES; i++) {
-    	ESP_LOGI(TAG, "measure %d", i);
-    	switch ( measure_echo(dev, &echos[i]) ) {
-    	case ESP_OK:
-    		ESP_LOGI(TAG, "ok");
-    		count++;
-    		vTaskDelay(40 / portTICK_PERIOD_MS);
-			break;
-    	case ESP_ERR_ULTRASONIC_PING:
-    		ESP_LOGW(TAG, "utrasonic ping");
-    		vTaskDelay(40 / portTICK_PERIOD_MS);
-    		break;
-    	case ESP_ERR_ULTRASONIC_PING_TIMEOUT:
-    		ESP_LOGW(TAG, "utrasonic ping timeout");
-    		break;
-    	case ESP_ERR_ULTRASONIC_ECHO_TIMEOUT:
-    		ESP_LOGW(TAG, "utrasonic echo timeout");
-    		count++;
-    		break;
-    	default:
-    		ESP_LOGW(TAG, "unknown error");
-    	}
+    for (int i = 0; i < NB_MEASURES; i++) {
+        ESP_LOGI(TAG, "measure %d", i);
+        switch (measure_echo(dev, &echos[i])) {
+            case ESP_OK:
+                ESP_LOGI(TAG, "ok");
+                count++;
+                vTaskDelay(40 / portTICK_PERIOD_MS);
+                break;
+            case ESP_ERR_ULTRASONIC_PING:
+                ESP_LOGW(TAG, "utrasonic ping");
+                vTaskDelay(40 / portTICK_PERIOD_MS);
+                break;
+            case ESP_ERR_ULTRASONIC_PING_TIMEOUT:
+                ESP_LOGW(TAG, "utrasonic ping timeout");
+                break;
+            case ESP_ERR_ULTRASONIC_ECHO_TIMEOUT:
+                ESP_LOGW(TAG, "utrasonic echo timeout");
+                count++;
+                break;
+            default:
+                ESP_LOGW(TAG, "unknown error");
+        }
 
     }
     qsort(echos, NB_MEASURES, sizeof(int), compare);
-    for (int i=0; i < count; i++) {
-    	ESP_LOGI(TAG, "measure %d: echo: %d", i, echos[i]);
+    for (int i = 0; i < count; i++) {
+        ESP_LOGI(TAG, "measure %d: echo: %d", i, echos[i]);
     }
-    *echo = echos[(NB_MEASURES - count) + count/2 -1];
-    ESP_LOGI(TAG, "Select measure %d: %d", (NB_MEASURES - count) + count/2 - 1, *echo);
+    *echo = echos[(NB_MEASURES - count) + count / 2 - 1];
+    ESP_LOGI(TAG, "Select measure %d: %d", (NB_MEASURES - count) + count/2 - 1,
+            *echo);
     if (count > 0) {
-    	return ESP_OK;
+        return ESP_OK;
     }
     return ESP_FAIL;
 }

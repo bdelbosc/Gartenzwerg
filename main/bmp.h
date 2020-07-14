@@ -8,6 +8,4 @@
 #include <string.h>
 #include "main.h"
 
-
-
 void bmp280_collect_data(void *pvParamters);
